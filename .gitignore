@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .ekkubo_cache/
 *.mp3
+.pytest_cache/
+.claude/
+kaggle_logs.txt
+scripts/kaggle_save_payload.json
