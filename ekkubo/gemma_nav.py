@@ -13,6 +13,7 @@ import requests
 from ekkubo.config import GEMINI_API_KEY, GEMMA_FALLBACK_MODEL, GEMMA_MODEL
 from ekkubo.landmarks import POI
 from ekkubo.routing import RouteStep
+from ekkubo.speech import SpeechError, translate_to_luganda
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +23,15 @@ class GemmaError(Exception):
 
 
 SYSTEM_INSTRUCTION = """You are Ekkubo, an audio navigation assistant for boda boda (motorcycle taxi)
-riders in Kampala, Uganda. Riders speak informally, often mixing Luganda and English.
+riders in Kampala, Uganda.
 
 Rules:
-- Keep spoken Luganda instructions SHORT (one sentence, max ~15 words) — riders hear this while moving.
+- Write instruction_english as SHORT spoken directions (one sentence, max ~20 words).
+- Use Kampala boda phrasing: "continue straight", "turn left at", "pass the fuel station".
 - Never invent landmarks not in the candidate list.
 - Prefer named POIs (fuel stations, mosques, markets, taxi stages) over generic descriptions.
-- If no good landmark exists, give distance-and-turn navigation using map data.
-- Every instruction_luganda value MUST be natural Luganda, never English.
+- If no good landmark exists, use street name, distance in metres, and turn direction from map data.
+- Luganda audio is translated separately — focus on clear, natural English instructions.
 - Always respond with valid JSON only, no markdown fences."""
 
 
@@ -162,34 +164,81 @@ def _poi_to_dict(poi: POI) -> dict[str, Any]:
     }
 
 
-def _fallback_step(step: RouteStep) -> dict[str, Any]:
+def _english_from_step(step: RouteStep, landmark: str | None = None) -> str:
+    distance = max(0, int(step.distance_m))
+    modifier = (step.modifier or "").lower()
+    maneuver = step.maneuver_type.lower()
+    road = f" on {step.name}" if step.name else ""
+    landmark_clause = f" past {landmark}" if landmark else ""
+
+    if step.instruction.strip():
+        return step.instruction.strip()
+
+    if maneuver in {"arrive", "destination"}:
+        return "You have arrived at your destination."
+    if maneuver in {"depart", "start"}:
+        return f"Start riding and continue straight for {distance} metres{road}."
+    if "left" in modifier:
+        return f"Continue for {distance} metres{road}{landmark_clause}, then turn left."
+    if "right" in modifier:
+        return f"Continue for {distance} metres{road}{landmark_clause}, then turn right."
+    if maneuver in {"roundabout", "rotary"}:
+        return f"Enter the roundabout{road} and continue for {distance} metres."
+    if maneuver in {"uturn", "u-turn"}:
+        return f"Make a U-turn{road} and continue for {distance} metres."
+    return f"Continue straight for {distance} metres{road}{landmark_clause}."
+
+
+def _template_luganda(step: RouteStep) -> str:
+    """Offline Luganda when Sunbird translation is unavailable."""
     distance = max(0, int(step.distance_m))
     modifier = (step.modifier or "").lower()
     maneuver = step.maneuver_type.lower()
     road = f" ku {step.name}" if step.name else ""
 
     if maneuver in {"arrive", "destination"}:
-        luganda = "Otuuse gy'olaga."
-    elif maneuver in {"depart", "start"}:
-        luganda = f"Tandika, weeyongere mita {distance}{road}."
-    elif "left" in modifier:
-        luganda = f"Kyuka ku kkono{road}, weeyongere mita {distance}."
-    elif "right" in modifier:
-        luganda = f"Kyuka ku ddyo{road}, weeyongere mita {distance}."
-    elif maneuver in {"roundabout", "rotary"}:
-        luganda = f"Yingira mu nkulungo{road}, weeyongere mita {distance}."
-    elif maneuver in {"uturn", "u-turn"}:
-        luganda = f"Kyukira ddala{road}, weeyongere mita {distance}."
-    else:
-        luganda = f"Weeyongere mita {distance}{road}."
+        return "Otuuse gy'olaga."
+    if maneuver in {"depart", "start"}:
+        return f"Tandika, genda mu maaso mita {distance}{road}."
+    if "left" in modifier:
+        return f"Genda mu maaso mita {distance}{road}, oluvannyuma kyuka ku kkono."
+    if "right" in modifier:
+        return f"Genda mu maaso mita {distance}{road}, oluvannyuma kyuka ku ddyo."
+    if maneuver in {"roundabout", "rotary"}:
+        return f"Yingira mu nkulungo{road}, genda mu maaso mita {distance}."
+    if maneuver in {"uturn", "u-turn"}:
+        return f"Kyukira ddala{road}, genda mu maaso mita {distance}."
+    return f"Genda mu maaso mita {distance}{road}."
 
-    english = step.instruction.strip() or f"Continue for {distance} meters{road}."
+
+def _luganda_for_english(english: str, step: RouteStep) -> str:
+    try:
+        return translate_to_luganda(english)
+    except (SpeechError, requests.RequestException) as exc:
+        logger.warning("Sunbird Luganda translation failed; using template: %s", exc)
+        return _template_luganda(step)
+
+
+def _apply_luganda_translations(instructions: list[dict[str, Any]], steps: list[RouteStep]) -> list[dict[str, Any]]:
+    for index, item in enumerate(instructions):
+        step = steps[index] if index < len(steps) else steps[-1]
+        english = str(item.get("instruction_english", "")).strip() or _english_from_step(step)
+        item["instruction_english"] = english
+        item["instruction_luganda"] = _luganda_for_english(english, step)
+        if index < len(instructions) - 1:
+            time.sleep(0.15)
+    return instructions
+
+
+def _fallback_step(step: RouteStep) -> dict[str, Any]:
+    distance = max(0, int(step.distance_m))
+    english = _english_from_step(step)
     return {
         "distance_m": distance,
         "maneuver": step.maneuver_type,
         "chosen_landmark": None,
-        "instruction_luganda": luganda,
         "instruction_english": english,
+        "instruction_luganda": _template_luganda(step),
     }
 
 
@@ -270,11 +319,10 @@ Route steps from the map:
 {json.dumps(route_data, ensure_ascii=False)}
 
 For EACH step:
-1. If a useful named landmark candidate exists, use it. Never invent a landmark.
+1. If a useful named landmark candidate exists, use it in instruction_english. Never invent a landmark.
 2. If there is no landmark, use the map maneuver, street and distance.
-3. instruction_luganda must be natural, short Luganda. Do not put English in it.
-4. instruction_english must be a short English equivalent.
-5. Preserve step_id and output every step in the same order.
+3. instruction_english must be one short spoken sentence a boda rider can hear while moving.
+4. Preserve step_id and output every step in the same order.
 
 Return exactly:
 {{"instructions": [
@@ -283,8 +331,7 @@ Return exactly:
     "distance_m": 50,
     "maneuver": "turn",
     "chosen_landmark": null,
-    "instruction_luganda": "Weeyongere mita ataano, oluvannyuma kyuka ku kkono.",
-    "instruction_english": "Continue for 50 metres, then turn left."
+    "instruction_english": "Continue straight for 50 metres, then turn left."
   }}
 ]}}"""
 
@@ -299,15 +346,14 @@ Return exactly:
         instructions = []
         for index, step in enumerate(steps):
             item = by_id.get(index)
-            if not item or not str(item.get("instruction_luganda", "")).strip():
+            if not item or not str(item.get("instruction_english", "")).strip():
                 instructions.append(_fallback_step(step))
                 continue
             item.setdefault("distance_m", int(step.distance_m))
             item.setdefault("maneuver", step.maneuver_type)
             item.setdefault("chosen_landmark", None)
-            item.setdefault("instruction_english", step.instruction)
             instructions.append(item)
-        return instructions
+        return _apply_luganda_translations(instructions, steps)
     except GemmaError as exc:
-        logger.warning("Batched Gemma route generation failed; using Luganda fallback: %s", exc)
-        return [_fallback_step(step) for step in steps]
+        logger.warning("Batched Gemma route generation failed; using map fallback: %s", exc)
+        return _apply_luganda_translations([_fallback_step(step) for step in steps], steps)

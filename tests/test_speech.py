@@ -78,3 +78,28 @@ def test_synthesize_speech_uses_sunbird(monkeypatch, tmp_path):
     assert out.read_bytes() == b"fake-mp3-bytes"
     assert captured["url"].endswith("/tasks/tts")
     assert captured["json"]["speaker_id"] == speech.SUNBIRD_TTS_SPEAKER_ID
+
+
+def test_translate_to_luganda_uses_sunbird(monkeypatch):
+    captured = {}
+
+    def fake_post(url, headers, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        return _FakeResponse(
+            {
+                "output": {
+                    "translated_text": "Genda mu maaso, oluvannyuma kyuka ku ddyo.",
+                }
+            }
+        )
+
+    monkeypatch.setattr(speech, "SUNBIRD_API_KEY", "test-sunbird")
+    monkeypatch.setattr(speech.requests, "post", fake_post)
+
+    text = speech.translate_to_luganda("Continue straight, then turn right.")
+
+    assert text == "Genda mu maaso, oluvannyuma kyuka ku ddyo."
+    assert captured["url"].endswith("/tasks/translate")
+    assert captured["json"]["source_language"] == "eng"
+    assert captured["json"]["target_language"] == "lug"

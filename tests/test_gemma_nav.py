@@ -32,19 +32,24 @@ def test_disambiguate_route_batches_all_steps(monkeypatch):
                 "instructions": [
                     {
                         "step_id": 0,
-                        "instruction_luganda": "Weeyongere mita ataano.",
-                        "instruction_english": "Continue for 50 metres.",
+                        "instruction_english": "Continue straight for 50 metres.",
                     },
                     {
                         "step_id": 1,
-                        "instruction_luganda": "Kyuka ku kkono.",
                         "instruction_english": "Turn left.",
                     },
                 ]
             }
         )
 
+    def fake_translate(text: str, **_kwargs) -> str:
+        return {
+            "Continue straight for 50 metres.": "Genda mu maaso mita 50.",
+            "Turn left.": "Kyuka ku kkono.",
+        }[text]
+
     monkeypatch.setattr(gemma_nav, "_call_gemma", fake_call)
+    monkeypatch.setattr(gemma_nav, "translate_to_luganda", fake_translate)
 
     result = gemma_nav.disambiguate_route(steps, [[], []])
 
@@ -53,14 +58,18 @@ def test_disambiguate_route_batches_all_steps(monkeypatch):
     assert result[1]["instruction_luganda"] == "Kyuka ku kkono."
 
 
-def test_disambiguate_route_fallback_is_luganda(monkeypatch):
+def test_disambiguate_route_fallback_uses_sunbird_luganda(monkeypatch):
     step = _step(50, "turn", "right")
 
     def fail(_prompt: str, **_kwargs) -> str:
         raise gemma_nav.GemmaError("temporary failure")
 
+    def fake_translate(text: str, **_kwargs) -> str:
+        return "Genda mu maaso, oluvannyuma kyuka ku ddyo."
+
     monkeypatch.setattr(gemma_nav, "_call_gemma", fail)
+    monkeypatch.setattr(gemma_nav, "translate_to_luganda", fake_translate)
 
     result = gemma_nav.disambiguate_route([step], [[]])
 
-    assert result[0]["instruction_luganda"] == "Kyuka ku ddyo, weeyongere mita 50."
+    assert result[0]["instruction_luganda"] == "Genda mu maaso, oluvannyuma kyuka ku ddyo."

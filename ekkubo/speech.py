@@ -168,6 +168,34 @@ def synthesize_speech(text: str, output_path: str | Path | None = None) -> Path:
     return _gtts_synthesize(text, output_path)
 
 
+def translate_to_luganda(text: str, *, source_language: str = "eng", target_language: str = "lug") -> str:
+    """Translate navigation text to natural Luganda via Sunbird NLLB."""
+    cleaned = text.strip()
+    if not cleaned:
+        raise SpeechError("Cannot translate empty text")
+    if not SUNBIRD_API_KEY:
+        raise SpeechError("SUNBIRD_API_KEY not set for translation")
+
+    resp = requests.post(
+        f"{SUNBIRD_API_URL}/tasks/translate",
+        headers={**_sunbird_headers(json=True), "accept": "application/json"},
+        json={
+            "source_language": source_language,
+            "target_language": target_language,
+            "text": cleaned,
+        },
+        timeout=120,
+    )
+    if not resp.ok:
+        raise SpeechError(f"Sunbird translate failed ({resp.status_code}): {resp.text[:300]}")
+
+    translated = (resp.json().get("output") or {}).get("translated_text", "").strip()
+    if not translated:
+        raise SpeechError(f"Sunbird translate returned empty text: {resp.text[:300]}")
+    logger.info("Sunbird translate: %r -> %r", cleaned, translated)
+    return translated
+
+
 def concatenate_instructions_luganda(instructions: list[dict]) -> str:
     """Build one spoken script from route step Luganda instructions."""
     parts = [i.get("instruction_luganda", "") for i in instructions if i.get("instruction_luganda")]
