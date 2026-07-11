@@ -152,8 +152,8 @@ function LoadingState() {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="h-14 rounded-lg bg-[linear-gradient(90deg,var(--color-muted)_25%,var(--color-accent-soft)_50%,var(--color-muted)_75%)] bg-[length:200%_100%]"
-          style={{ animation: "shimmer 1.6s ease-in-out infinite", animationDelay: `${i * 120}ms` }}
+          className="h-14 animate-pulse rounded-lg bg-muted"
+          style={{ animationDelay: `${i * 120}ms` }}
         />
       ))}
     </div>
