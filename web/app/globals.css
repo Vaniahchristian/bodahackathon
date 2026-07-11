@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: oklch(98% 0.008 55);
-  --foreground: oklch(22% 0.02 40);
-  --muted: oklch(94% 0.012 55);
-  --muted-foreground: oklch(46% 0.025 40);
-  --border: oklch(89% 0.015 50);
+  --background: #ffffff;
+  --foreground: oklch(22% 0.01 0);
+  --muted: oklch(96% 0 0);
+  --muted-foreground: oklch(46% 0.01 0);
+  --border: oklch(90% 0 0);
   --accent: oklch(58% 0.16 40);
-  --accent-foreground: oklch(98% 0.006 55);
-  --accent-soft: oklch(93% 0.04 45);
+  --accent-foreground: #ffffff;
+  --accent-soft: oklch(96% 0.02 40);
   --error: oklch(55% 0.15 27);
-  --error-soft: oklch(94% 0.035 30);
+  --error-soft: oklch(96% 0.02 27);
 }
 
 @theme inline {
