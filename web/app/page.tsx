@@ -152,7 +152,7 @@ function LoadingState() {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="h-14 animate-pulse rounded-lg bg-[linear-gradient(90deg,var(--color-muted)_25%,var(--color-accent-soft)_50%,var(--color-muted)_75%)] bg-[length:200%_100%]"
+          className="h-14 rounded-lg bg-[linear-gradient(90deg,var(--color-muted)_25%,var(--color-accent-soft)_50%,var(--color-muted)_75%)] bg-[length:200%_100%]"
           style={{ animation: "shimmer 1.6s ease-in-out infinite", animationDelay: `${i * 120}ms` }}
         />
       ))}
@@ -205,16 +205,12 @@ function ResultView({ result }: { result: NavigateResponse }) {
 
       <ol className="mt-6 divide-y divide-border">
         {result.instructions.map((step, i) => (
-          <li
-            key={i}
-            className="flex gap-4 py-4"
-            style={{ animation: "rise-in 0.4s cubic-bezier(0.16,1,0.3,1) both", animationDelay: `${i * 60}ms` }}
-          >
+          <li key={i} className="flex gap-4 py-4">
             <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
               {step.distance_m != null ? `${step.distance_m} m` : ""}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="font-medium">{step.chosen_landmark || "No landmark — follow the road"}</p>
+              <p className="font-medium">{step.chosen_landmark || "No landmark, follow the road"}</p>
               <p className="mt-0.5 text-sm text-accent">{step.instruction_luganda}</p>
               <p className="mt-0.5 text-sm text-muted-foreground">{step.instruction_english}</p>
             </div>
