@@ -23,6 +23,7 @@ type NavigateResponse = {
   message: string;
   clarifying_question: string | null;
   instructions: Instruction[];
+  journey_speech_text: string | null;
   audio_url: string | null;
 };
 
@@ -43,7 +44,7 @@ export default function Home() {
       const res = await fetch(`${API_URL}/api/navigate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ origin, destination, generate_audio: true }),
+        body: JSON.stringify({ origin, destination, generate_audio: false }),
       });
       const data: NavigateResponse = await res.json();
       if (!res.ok) throw new Error(data.message || "Navigation failed");
@@ -188,7 +189,8 @@ function ResultView({ result }: { result: NavigateResponse }) {
     <div className="border-t border-border pt-6" style={{ animation: "rise-in 0.4s cubic-bezier(0.16,1,0.3,1)" }}>
       <p className="text-sm text-muted-foreground">{result.message}</p>
 
-      {result.audio_url && (
+      {result.journey_speech_text && <JourneyAudio text={result.journey_speech_text} />}
+      {!result.journey_speech_text && result.audio_url && (
         <div className="mt-4">
           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Full journey (Luganda)
@@ -220,6 +222,69 @@ function ResultView({ result }: { result: NavigateResponse }) {
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+function JourneyAudio({ text }: { text: string }) {
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAudio() {
+      setLoading(true);
+      setAudioUrl(null);
+      try {
+        const res = await fetch(`${API_URL}/api/speak`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Speech failed");
+        if (!cancelled) setAudioUrl(`${API_URL}${data.audio_url}`);
+      } catch {
+        if (!cancelled) setAudioUrl(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadAudio();
+    return () => {
+      cancelled = true;
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, [text]);
+
+  useEffect(() => {
+    if (!audioUrl) return;
+    const audio = new Audio(audioUrl);
+    audioRef.current = audio;
+    void audio.play().catch(() => undefined);
+    return () => {
+      audio.pause();
+    };
+  }, [audioUrl]);
+
+  return (
+    <div className="mt-4">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Full journey (Luganda)
+      </p>
+      {loading && <p className="text-sm text-muted-foreground">Generating audio…</p>}
+      {!loading && audioUrl && (
+        <audio
+          controls
+          src={audioUrl}
+          className="w-full"
+          style={{ accentColor: "var(--color-accent)" }}
+        />
+      )}
     </div>
   );
 }

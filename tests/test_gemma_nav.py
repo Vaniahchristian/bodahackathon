@@ -43,13 +43,15 @@ def test_disambiguate_route_batches_all_steps(monkeypatch):
         )
 
     def fake_translate(text: str, **_kwargs) -> str:
+        if "\n\n" in text:
+            return "Genda mu maaso mita 50.\n\nKyuka ku kkono."
         return {
             "Continue straight for 50 metres.": "Genda mu maaso mita 50.",
             "Turn left.": "Kyuka ku kkono.",
         }[text]
 
     monkeypatch.setattr(gemma_nav, "_call_gemma", fake_call)
-    monkeypatch.setattr(gemma_nav, "translate_to_luganda", fake_translate)
+    monkeypatch.setattr(gemma_nav, "translate_batch_to_luganda", lambda texts: [fake_translate(t) for t in texts])
 
     result = gemma_nav.disambiguate_route(steps, [[], []])
 
@@ -68,7 +70,7 @@ def test_disambiguate_route_fallback_uses_sunbird_luganda(monkeypatch):
         return "Genda mu maaso, oluvannyuma kyuka ku ddyo."
 
     monkeypatch.setattr(gemma_nav, "_call_gemma", fail)
-    monkeypatch.setattr(gemma_nav, "translate_to_luganda", fake_translate)
+    monkeypatch.setattr(gemma_nav, "translate_batch_to_luganda", lambda texts: [fake_translate(t) for t in texts])
 
     result = gemma_nav.disambiguate_route([step], [[]])
 

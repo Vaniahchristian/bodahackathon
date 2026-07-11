@@ -23,13 +23,17 @@ def test_navigate_success_with_audio(monkeypatch, tmp_path):
             destination=GeocodeResult("Kisaasi", 0.37, 32.62, 0.8, {}),
             instructions=[{"instruction_english": "Turn left"}],
             audio_path=str(audio_file),
+            journey_speech_text="Kyuka ku kkono.",
             message="Route ready",
         )
 
     monkeypatch.setattr(api, "navigate", fake_navigate)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
 
-    resp = client.post("/api/navigate", json={"origin": "Makerere", "destination": "Kisaasi"})
+    resp = client.post(
+        "/api/navigate",
+        json={"origin": "Makerere", "destination": "Kisaasi", "generate_audio": True},
+    )
     body = resp.json()
 
     assert resp.status_code == 200

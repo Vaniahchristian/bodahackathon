@@ -357,6 +357,53 @@ def synthesize_speech(text: str, output_path: str | Path | None = None) -> Path:
     return _gtts_synthesize(text, output_path)
 
 
+def translate_batch_to_luganda(texts: list[str]) -> list[str]:
+    """Translate multiple navigation lines in one Sunbird call when possible."""
+    results = [""] * len(texts)
+    pending: list[tuple[int, str]] = []
+    for index, text in enumerate(texts):
+        cleaned = text.strip()
+        if cleaned:
+            pending.append((index, cleaned))
+
+    if not pending:
+        return results
+
+    if len(pending) == 1:
+        index, cleaned = pending[0]
+        results[index] = translate_to_luganda(cleaned)
+        return results
+
+    batch = "\n\n".join(text for _, text in pending)
+    try:
+        translated = translate_to_luganda(batch)
+    except (SpeechError, requests.RequestException):
+        for index, cleaned in pending:
+            try:
+                results[index] = translate_to_luganda(cleaned)
+            except (SpeechError, requests.RequestException) as exc:
+                logger.warning("Per-step Sunbird translate failed: %s", exc)
+        return results
+
+    parts = [part.strip() for part in translated.split("\n\n") if part.strip()]
+    if len(parts) == len(pending):
+        for (index, _), part in zip(pending, parts):
+            results[index] = part
+        return results
+
+    logger.warning(
+        "Batch translate split mismatch (%d parts for %d steps); retrying per step",
+        len(parts),
+        len(pending),
+    )
+    for index, cleaned in pending:
+        try:
+            results[index] = translate_to_luganda(cleaned)
+        except (SpeechError, requests.RequestException) as exc:
+            logger.warning("Per-step Sunbird translate failed: %s", exc)
+    return results
+
+
 def translate_to_luganda(text: str, *, source_language: str = "eng", target_language: str = "lug") -> str:
     """Translate navigation text to natural Luganda via Sunbird NLLB."""
     cleaned = text.strip()

@@ -28,7 +28,7 @@ app.add_middleware(
 class NavigateRequest(BaseModel):
     origin: str
     destination: str
-    generate_audio: bool = True
+    generate_audio: bool = False
 
 
 class SpeakRequest(BaseModel):
@@ -46,6 +46,7 @@ def navigate_endpoint(req: NavigateRequest) -> dict:
         "destination": asdict(result.destination) if result.destination else None,
         "route": asdict(result.route) if result.route else None,
         "instructions": result.instructions,
+        "journey_speech_text": result.journey_speech_text or None,
         "audio_url": f"/api/audio/{Path(result.audio_path).name}" if result.audio_path else None,
     }
 

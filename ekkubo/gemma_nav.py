@@ -13,7 +13,7 @@ import requests
 from ekkubo.config import GEMINI_API_KEY, GEMMA_FALLBACK_MODEL, GEMMA_MODEL
 from ekkubo.landmarks import POI
 from ekkubo.routing import RouteStep
-from ekkubo.speech import SpeechError, translate_to_luganda
+from ekkubo.speech import SpeechError, translate_batch_to_luganda
 
 logger = logging.getLogger(__name__)
 
@@ -211,22 +211,24 @@ def _template_luganda(step: RouteStep) -> str:
     return f"Genda mu maaso mita {distance}{road}."
 
 
-def _luganda_for_english(english: str, step: RouteStep) -> str:
-    try:
-        return translate_to_luganda(english)
-    except (SpeechError, requests.RequestException) as exc:
-        logger.warning("Sunbird Luganda translation failed; using template: %s", exc)
-        return _template_luganda(step)
-
-
 def _apply_luganda_translations(instructions: list[dict[str, Any]], steps: list[RouteStep]) -> list[dict[str, Any]]:
+    english_texts: list[str] = []
     for index, item in enumerate(instructions):
         step = steps[index] if index < len(steps) else steps[-1]
         english = str(item.get("instruction_english", "")).strip() or _english_from_step(step)
         item["instruction_english"] = english
-        item["instruction_luganda"] = _luganda_for_english(english, step)
-        if index < len(instructions) - 1:
-            time.sleep(0.15)
+        english_texts.append(english)
+
+    try:
+        luganda_texts = translate_batch_to_luganda(english_texts)
+    except (SpeechError, requests.RequestException) as exc:
+        logger.warning("Batch Luganda translation failed; using templates: %s", exc)
+        luganda_texts = [""] * len(instructions)
+
+    for index, item in enumerate(instructions):
+        step = steps[index] if index < len(steps) else steps[-1]
+        luganda = luganda_texts[index].strip() if index < len(luganda_texts) else ""
+        item["instruction_luganda"] = luganda or _template_luganda(step)
     return instructions
 
 

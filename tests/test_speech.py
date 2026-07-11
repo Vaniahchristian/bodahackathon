@@ -161,3 +161,21 @@ def test_translate_to_luganda_uses_sunbird(monkeypatch):
     assert captured["url"].endswith("/tasks/translate")
     assert captured["json"]["source_language"] == "eng"
     assert captured["json"]["target_language"] == "lug"
+
+
+def test_translate_batch_to_luganda_uses_single_call(monkeypatch):
+    calls = []
+
+    def fake_translate(text: str, **_kwargs) -> str:
+        calls.append(text)
+        return "Genda mu maaso mita 50.\n\nKyuka ku kkono."
+
+    monkeypatch.setattr(speech, "translate_to_luganda", fake_translate)
+
+    result = speech.translate_batch_to_luganda(
+        ["Continue straight for 50 metres.", "Turn left."]
+    )
+
+    assert len(calls) == 1
+    assert calls[0] == "Continue straight for 50 metres.\n\nTurn left."
+    assert result == ["Genda mu maaso mita 50.", "Kyuka ku kkono."]

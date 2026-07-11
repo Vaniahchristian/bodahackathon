@@ -45,6 +45,7 @@ class NavigationResult:
     route: Route | None = None
     instructions: list[dict] = field(default_factory=list)
     audio_path: str | None = None
+    journey_speech_text: str = ""
     message: str = ""
     clarifying_question: str | None = None
 
@@ -129,12 +130,11 @@ def navigate(
         _notify(on_status, PipelineStatus.GENERATING_INSTRUCTIONS.value)
         instructions = disambiguate_route(route.steps, pois_per_step, rider_request=raw_dest)
 
+        journey_speech_text = concatenate_instructions_luganda(instructions) if instructions else ""
         audio_path = None
-        if generate_audio and instructions:
+        if generate_audio and journey_speech_text:
             _notify(on_status, PipelineStatus.GENERATING_SPEECH.value)
-            script = concatenate_instructions_luganda(instructions)
-            if script:
-                audio_path = str(synthesize_speech(script))
+            audio_path = str(synthesize_speech(journey_speech_text))
 
         _notify(on_status, PipelineStatus.DONE.value)
         return NavigationResult(
@@ -144,6 +144,7 @@ def navigate(
             route=route,
             instructions=instructions,
             audio_path=audio_path,
+            journey_speech_text=journey_speech_text,
             message=f"Route ready: {len(instructions)} steps, "
             f"{route.distance_m / 1000:.1f} km, ~{route.duration_s / 60:.0f} min",
         )
