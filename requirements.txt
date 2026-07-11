@@ -1,0 +1,4 @@
+requests>=2.31.0
+gradio>=4.44.0
+openai-whisper>=20231117
+gTTS>=2.5.0
