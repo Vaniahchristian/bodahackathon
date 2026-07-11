@@ -7,4 +7,5 @@ __pycache__/
 .pytest_cache/
 .claude/
 kaggle_logs.txt
-scripts/kaggle_save_payload.json
+web/node_modules/
+web/.next/

@@ -25,6 +25,10 @@ def _load_kaggle_secrets() -> None:
             key = client.get_secret("GEMINI_API_KEY")
             if key:
                 os.environ["GEMINI_API_KEY"] = key
+        if not os.environ.get("SUNBIRD_API_KEY"):
+            key = client.get_secret("SUNBIRD_API_KEY")
+            if key:
+                os.environ["SUNBIRD_API_KEY"] = key
         if not os.environ.get("OPENAI_API_KEY"):
             key = client.get_secret("OPENAI_API_KEY")
             if key:
@@ -67,15 +71,19 @@ POI_SEARCH_RADIUS_M = 100
 # --- Gemma 4 via Google Generative Language API ---
 # Set GEMINI_API_KEY or GOOGLE_API_KEY in environment / Kaggle secrets.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
-GEMMA_MODEL = os.environ.get("EKKUBO_GEMMA_MODEL", "gemma-4-31b-it")
-GEMMA_FALLBACK_MODEL = os.environ.get("EKKUBO_GEMMA_FALLBACK_MODEL", "gemini-2.0-flash")
+GEMMA_MODEL = os.environ.get("EKKUBO_GEMMA_MODEL", "gemma-4-26b-a4b-it")
+GEMMA_FALLBACK_MODEL = os.environ.get("EKKUBO_GEMMA_FALLBACK_MODEL", "")
 GEMINI_API_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{GEMMA_MODEL}:generateContent"
 )
 
-# --- Speech ---
-# Hosted Whisper transcription via OpenAI API (no local model download/torch).
-# Set OPENAI_API_KEY in environment / Kaggle secrets.
+# --- Speech (Sunbird AI — Ugandan languages; free tier available) ---
+SUNBIRD_API_KEY = os.environ.get("SUNBIRD_API_KEY", "")
+SUNBIRD_API_URL = os.environ.get("SUNBIRD_API_URL", "https://api.sunbird.ai")
+SUNBIRD_STT_LANGUAGE = os.environ.get("SUNBIRD_STT_LANGUAGE", "lug")
+SUNBIRD_TTS_SPEAKER_ID = int(os.environ.get("SUNBIRD_TTS_SPEAKER_ID", "248"))  # Luganda female
+
+# Optional fallbacks when Sunbird is unavailable
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 WHISPER_MODEL = os.environ.get("EKKUBO_WHISPER_MODEL", "whisper-1")
 WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"

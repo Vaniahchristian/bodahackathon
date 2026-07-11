@@ -69,7 +69,7 @@ def test_transcribe_endpoint_returns_text(monkeypatch):
 
 def test_transcribe_endpoint_maps_speech_error_to_502(monkeypatch):
     def raise_speech_error(path):
-        raise SpeechError("OPENAI_API_KEY not set")
+        raise SpeechError("SUNBIRD_API_KEY not set")
 
     monkeypatch.setattr(api, "transcribe_audio", raise_speech_error)
 

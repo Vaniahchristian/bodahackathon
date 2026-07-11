@@ -19,7 +19,7 @@ app = FastAPI(title="Ekkubo API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # ponytail: Next.js dev origin only, add prod domain on deploy
+    allow_origins=["*"],  # ponytail: open for hackathon demo, restrict before prod
     allow_methods=["*"],
     allow_headers=["*"],
 )

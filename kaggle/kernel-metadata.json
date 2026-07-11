@@ -1,0 +1,14 @@
+{
+  "id": "mukisavaniah/ekkubo-eyes-free-boda-navigation",
+  "title": "Ekkubo - Eyes-Free Boda Navigation",
+  "code_file": "ekkubo-notebook.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": []
+}
