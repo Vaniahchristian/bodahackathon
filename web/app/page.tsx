@@ -307,7 +307,7 @@ function JourneyAudio({ text }: { text: string }) {
         const res = await fetch(`${API_URL}/api/speak`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, journey: true }),
         });
         const data = await res.json();
         logNav("journey audio response", {

@@ -33,6 +33,7 @@ class NavigateRequest(BaseModel):
 
 class SpeakRequest(BaseModel):
     text: str
+    journey: bool = False
 
 
 @app.post("/api/navigate")
@@ -57,7 +58,7 @@ def speak_endpoint(req: SpeakRequest) -> dict:
     if not text:
         raise HTTPException(400, "Text is required")
     try:
-        audio_path = synthesize_speech(text)
+        audio_path = synthesize_speech(text, journey=req.journey)
     except (SpeechError, ValueError) as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"audio_url": f"/api/audio/{Path(audio_path).name}"}

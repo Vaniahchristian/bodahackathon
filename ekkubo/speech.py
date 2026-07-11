@@ -211,7 +211,7 @@ def _number_to_luganda(n: int) -> str:
     return str(n)
 
 
-def prepare_luganda_for_tts(text: str) -> str:
+def prepare_luganda_for_tts(text: str, *, first_sentence_only: bool = True) -> str:
     """Shorten and normalize Luganda before TTS for clearer pronunciation."""
     cleaned = text.strip()
     if not cleaned:
@@ -221,10 +221,11 @@ def prepare_luganda_for_tts(text: str) -> str:
     cleaned = re.sub(r"\s+", " ", cleaned)
     cleaned = cleaned.replace(";", ".").replace("—", ", ")
 
-    # One short sentence reads more naturally than a long translated paragraph.
-    parts = [part.strip() for part in re.split(r"[.!?]", cleaned) if part.strip()]
-    if parts:
-        cleaned = parts[0]
+    if first_sentence_only:
+        # One short sentence reads more naturally for a single maneuver.
+        parts = [part.strip() for part in re.split(r"[.!?]", cleaned) if part.strip()]
+        if parts:
+            cleaned = parts[0]
 
     cleaned = re.sub(
         r"\b(\d{1,4})\s*(?:m|met(?:er|re)s?)\b",
@@ -304,8 +305,12 @@ def _sunbird_synthesize_legacy(text: str, output_path: Path) -> Path:
     return _download_sunbird_audio(audio_url, output_path)
 
 
-def _sunbird_synthesize(text: str, output_path: Path) -> Path:
-    prepared = prepare_luganda_for_tts(text)
+def _sunbird_synthesize(text: str, output_path: Path, *, journey: bool = False) -> Path:
+    prepared = (
+        prepare_luganda_for_tts(text, first_sentence_only=False)
+        if journey
+        else text
+    )
     try:
         return _sunbird_synthesize_unified(prepared, output_path)
     except (SpeechError, requests.RequestException) as exc:
@@ -334,10 +339,21 @@ def _gtts_synthesize(text: str, output_path: Path) -> Path:
     return output_path
 
 
-def synthesize_speech(text: str, output_path: str | Path | None = None) -> Path:
+def synthesize_speech(
+    text: str,
+    output_path: str | Path | None = None,
+    *,
+    journey: bool = False,
+) -> Path:
     """Generate spoken Luganda audio — Sunbird TTS first, gTTS fallback."""
     if not text.strip():
         raise ValueError("Cannot synthesize empty text")
+
+    spoken_text = (
+        text
+        if journey
+        else prepare_luganda_for_tts(text, first_sentence_only=True)
+    )
 
     if output_path is None:
         fd, tmp = tempfile.mkstemp(suffix=".mp3")
@@ -350,11 +366,11 @@ def synthesize_speech(text: str, output_path: str | Path | None = None) -> Path:
 
     if SUNBIRD_API_KEY:
         try:
-            return _sunbird_synthesize(text, output_path)
+            return _sunbird_synthesize(spoken_text, output_path, journey=journey)
         except (SpeechError, requests.RequestException) as exc:
             logger.warning("Sunbird TTS failed, using gTTS: %s", exc)
 
-    return _gtts_synthesize(text, output_path)
+    return _gtts_synthesize(spoken_text, output_path)
 
 
 def translate_batch_to_luganda(texts: list[str]) -> list[str]:

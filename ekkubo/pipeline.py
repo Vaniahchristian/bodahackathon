@@ -134,7 +134,7 @@ def navigate(
         audio_path = None
         if generate_audio and journey_speech_text:
             _notify(on_status, PipelineStatus.GENERATING_SPEECH.value)
-            audio_path = str(synthesize_speech(journey_speech_text))
+            audio_path = str(synthesize_speech(journey_speech_text, journey=True))
 
         _notify(on_status, PipelineStatus.DONE.value)
         return NavigationResult(
