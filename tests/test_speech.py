@@ -54,7 +54,26 @@ def test_transcribe_audio_requires_api_key(monkeypatch, tmp_path):
     monkeypatch.setattr(speech, "SUNBIRD_API_KEY", "")
     monkeypatch.setattr(speech, "OPENAI_API_KEY", "")
 
-    with pytest.raises(speech.SpeechError):
+    with pytest.raises(speech.SpeechError, match="No speech API configured"):
+        speech.transcribe_audio(audio)
+
+
+def test_transcribe_audio_surfaces_sunbird_error_without_whisper(monkeypatch, tmp_path):
+    audio = tmp_path / "clip.webm"
+    audio.write_bytes(b"fake webm")
+
+    def fake_normalize(path):
+        return path
+
+    def fail_sunbird(path):
+        raise speech.SpeechError("Sunbird STT failed (415): unsupported format")
+
+    monkeypatch.setattr(speech, "normalize_audio_for_stt", fake_normalize)
+    monkeypatch.setattr(speech, "SUNBIRD_API_KEY", "test-sunbird")
+    monkeypatch.setattr(speech, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(speech, "_sunbird_transcribe", fail_sunbird)
+
+    with pytest.raises(speech.SpeechError, match="Sunbird STT failed"):
         speech.transcribe_audio(audio)
 
 

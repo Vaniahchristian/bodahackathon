@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import mimetypes
 import re
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -46,6 +48,38 @@ def _sunbird_headers(*, json: bool = False) -> dict[str, str]:
 def _audio_mime(path: Path) -> str:
     guessed, _ = mimetypes.guess_type(path.name)
     return guessed or "application/octet-stream"
+
+
+def normalize_audio_for_stt(audio_path: Path) -> Path:
+    """Convert browser webm/ogg recordings to 16 kHz mono WAV for Sunbird STT."""
+    if audio_path.suffix.lower() == ".wav":
+        return audio_path
+    if not shutil.which("ffmpeg"):
+        logger.warning("ffmpeg not found; sending raw %s to STT", audio_path.suffix)
+        return audio_path
+
+    wav_path = audio_path.with_suffix(".wav")
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(audio_path),
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            str(wav_path),
+        ],
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = (result.stderr or b"").decode("utf-8", errors="replace")[-500:]
+        logger.warning("ffmpeg conversion failed (%s): %s", audio_path.suffix, stderr)
+        return audio_path
+    return wav_path
 
 
 def _sunbird_transcribe(audio_path: Path) -> str:
@@ -92,16 +126,22 @@ def _whisper_transcribe(audio_path: Path) -> str:
 
 def transcribe_audio(audio_path: str | Path) -> str:
     """Transcribe rider speech — Sunbird (Luganda) first, Whisper fallback."""
-    path = Path(audio_path)
+    path = normalize_audio_for_stt(Path(audio_path))
+    sunbird_error: Exception | None = None
     if SUNBIRD_API_KEY:
         try:
             return _sunbird_transcribe(path)
         except (SpeechError, requests.RequestException) as exc:
+            sunbird_error = exc
             logger.warning("Sunbird STT failed, trying fallback: %s", exc)
-    try:
-        return _whisper_transcribe(path)
-    except requests.RequestException as exc:
-        raise SpeechError(f"Whisper API request failed: {exc}") from exc
+    if OPENAI_API_KEY:
+        try:
+            return _whisper_transcribe(path)
+        except requests.RequestException as exc:
+            raise SpeechError(f"Whisper API request failed: {exc}") from exc
+    if sunbird_error:
+        raise SpeechError(str(sunbird_error)) from sunbird_error
+    raise SpeechError("No speech API configured. Set SUNBIRD_API_KEY or OPENAI_API_KEY.")
 
 
 _LUGANDA_ONES = {

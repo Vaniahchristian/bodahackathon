@@ -66,14 +66,18 @@ def speak_endpoint(req: SpeakRequest) -> dict:
 async def transcribe_endpoint(file: UploadFile = File(...)) -> dict:
     suffix = Path(file.filename or "audio").suffix or ".wav"
     fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+    audio_path = Path(tmp_path)
+    converted_path = audio_path.with_suffix(".wav")
     try:
         with open(fd, "wb") as out:
             shutil.copyfileobj(file.file, out)
-        text = transcribe_audio(tmp_path)
+        text = transcribe_audio(audio_path)
     except SpeechError as exc:
         raise HTTPException(502, str(exc)) from exc
     finally:
-        Path(tmp_path).unlink(missing_ok=True)
+        audio_path.unlink(missing_ok=True)
+        if converted_path != audio_path:
+            converted_path.unlink(missing_ok=True)
     return {"text": text}
 
 
