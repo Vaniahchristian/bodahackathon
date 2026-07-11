@@ -55,6 +55,20 @@ def test_navigate_error_has_no_audio_url(monkeypatch):
     assert body["origin"] is None
 
 
+def test_speak_endpoint_returns_audio(monkeypatch, tmp_path):
+    audio_file = tmp_path / "step.mp3"
+    audio_file.write_bytes(b"fake mp3")
+
+    monkeypatch.setattr(api, "synthesize_speech", lambda text: audio_file)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+
+    resp = client.post("/api/speak", json={"text": "Kyuka ku ddyo"})
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["audio_url"] == "/api/audio/step.mp3"
+
+
 def test_transcribe_endpoint_returns_text(monkeypatch):
     monkeypatch.setattr(api, "transcribe_audio", lambda path: "Kisaasi")
 

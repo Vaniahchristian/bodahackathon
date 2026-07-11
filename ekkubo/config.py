@@ -81,7 +81,11 @@ GEMINI_API_URL = (
 SUNBIRD_API_KEY = os.environ.get("SUNBIRD_API_KEY", "")
 SUNBIRD_API_URL = os.environ.get("SUNBIRD_API_URL", "https://api.sunbird.ai")
 SUNBIRD_STT_LANGUAGE = os.environ.get("SUNBIRD_STT_LANGUAGE", "lug")
-SUNBIRD_TTS_SPEAKER_ID = int(os.environ.get("SUNBIRD_TTS_SPEAKER_ID", "248"))  # Luganda female
+SUNBIRD_TTS_MODEL = os.environ.get("SUNBIRD_TTS_MODEL", "orpheus-3b-tts")
+SUNBIRD_TTS_VOICE = os.environ.get("SUNBIRD_TTS_VOICE", "salt_lug_0001")
+SUNBIRD_TTS_LANGUAGE = os.environ.get("SUNBIRD_TTS_LANGUAGE", "lug")
+SUNBIRD_TTS_TEMPERATURE = float(os.environ.get("SUNBIRD_TTS_TEMPERATURE", "0.3"))
+SUNBIRD_TTS_SPEAKER_ID = int(os.environ.get("SUNBIRD_TTS_SPEAKER_ID", "248"))  # spark-tts fallback
 
 # Optional fallbacks when Sunbird is unavailable
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")

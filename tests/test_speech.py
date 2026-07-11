@@ -64,7 +64,7 @@ def test_synthesize_speech_uses_sunbird(monkeypatch, tmp_path):
     def fake_post(url, headers, json, timeout):
         captured["url"] = url
         captured["json"] = json
-        return _FakeResponse({"output": {"audio_url": "https://cdn.example/audio.mp3"}})
+        return _FakeResponse({"audio_url": "https://cdn.example/audio.mp3"})
 
     def fake_get(url, timeout):
         return _FakeResponse(content=b"fake-mp3-bytes")
@@ -76,8 +76,17 @@ def test_synthesize_speech_uses_sunbird(monkeypatch, tmp_path):
     out = speech.synthesize_speech("Kyuka kkono", output_path=tmp_path / "route.mp3")
 
     assert out.read_bytes() == b"fake-mp3-bytes"
-    assert captured["url"].endswith("/tasks/tts")
-    assert captured["json"]["speaker_id"] == speech.SUNBIRD_TTS_SPEAKER_ID
+    assert captured["url"].endswith("/tasks/audio/speech")
+    assert captured["json"]["model"] == speech.SUNBIRD_TTS_MODEL
+    assert captured["json"]["voice"] == speech.SUNBIRD_TTS_VOICE
+    assert captured["json"]["text"] == "Kyuka kkono."
+
+
+def test_prepare_luganda_for_tts_shortens_and_spells_numbers():
+    text = speech.prepare_luganda_for_tts(
+        "Genda mu maaso okumala mita 50. Oluvannyuma kyuka ku ddyo (turn right)."
+    )
+    assert text == "Genda mu maaso okumala mita ataano."
 
 
 def test_translate_to_luganda_uses_sunbird(monkeypatch):

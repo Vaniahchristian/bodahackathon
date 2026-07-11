@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import re
 import tempfile
 from pathlib import Path
 
@@ -14,7 +15,11 @@ from ekkubo.config import (
     SUNBIRD_API_KEY,
     SUNBIRD_API_URL,
     SUNBIRD_STT_LANGUAGE,
+    SUNBIRD_TTS_LANGUAGE,
+    SUNBIRD_TTS_MODEL,
     SUNBIRD_TTS_SPEAKER_ID,
+    SUNBIRD_TTS_TEMPERATURE,
+    SUNBIRD_TTS_VOICE,
     TTS_LANG_FALLBACK,
     TTS_LANG_PRIMARY,
     TTS_MIN_BYTES_PER_CHAR,
@@ -99,29 +104,153 @@ def transcribe_audio(audio_path: str | Path) -> str:
         raise SpeechError(f"Whisper API request failed: {exc}") from exc
 
 
-def _sunbird_synthesize(text: str, output_path: Path) -> Path:
+_LUGANDA_ONES = {
+    0: "tteeke",
+    1: "emu",
+    2: "bbiri",
+    3: "ssatu",
+    4: "nnya",
+    5: "ttaano",
+    6: "mukaaga",
+    7: "musanvu",
+    8: "munaana",
+    9: "mwenda",
+    10: "kkumi",
+}
+_LUGANDA_TENS = {
+    20: "abiri",
+    30: "asatu",
+    40: "ana",
+    50: "ataano",
+    60: "nkaaga",
+    70: "musanvu",
+    80: "munaana",
+    90: "kyenda",
+}
+
+
+def _number_to_luganda(n: int) -> str:
+    if n <= 10:
+        return _LUGANDA_ONES.get(n, str(n))
+    if n < 20:
+        return f"kkumi ne {_LUGANDA_ONES[n - 10]}"
+    if n < 100:
+        tens = (n // 10) * 10
+        ones = n % 10
+        tens_word = _LUGANDA_TENS.get(tens, str(tens))
+        if ones == 0:
+            return tens_word
+        return f"{tens_word} ne {_LUGANDA_ONES[ones]}"
+    if n < 1000:
+        hundreds = n // 100
+        remainder = n % 100
+        hundred_word = "kikumi" if hundreds == 1 else f"{_LUGANDA_ONES[hundreds]} kikumi"
+        if remainder == 0:
+            return hundred_word
+        return f"{hundred_word} ne {_number_to_luganda(remainder)}"
+    return str(n)
+
+
+def prepare_luganda_for_tts(text: str) -> str:
+    """Shorten and normalize Luganda before TTS for clearer pronunciation."""
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+
+    cleaned = re.sub(r"\([^)]*\)", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = cleaned.replace(";", ".").replace("—", ", ")
+
+    # One short sentence reads more naturally than a long translated paragraph.
+    parts = [part.strip() for part in re.split(r"[.!?]", cleaned) if part.strip()]
+    if parts:
+        cleaned = parts[0]
+
+    cleaned = re.sub(
+        r"\b(\d{1,4})\s*(?:m|met(?:er|re)s?)\b",
+        lambda match: f"mita {_number_to_luganda(int(match.group(1)))}",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\bmita\s+(\d{1,4})\b",
+        lambda match: f"mita {_number_to_luganda(int(match.group(1)))}",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"(?<!\w)(\d{1,3})(?!\w)",
+        lambda match: _number_to_luganda(int(match.group(1))),
+        cleaned,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.")
+    if cleaned and cleaned[-1] not in ".!?":
+        cleaned += "."
+    return cleaned
+
+
+def _download_sunbird_audio(audio_url: str, output_path: Path) -> Path:
+    audio_resp = requests.get(audio_url, timeout=60)
+    audio_resp.raise_for_status()
+    output_path.write_bytes(audio_resp.content)
+    logger.info("Sunbird TTS OK: %d bytes -> %s", len(audio_resp.content), output_path)
+    return output_path
+
+
+def _sunbird_synthesize_unified(text: str, output_path: Path) -> Path:
+    payload: dict[str, str | float] = {
+        "text": text,
+        "model": SUNBIRD_TTS_MODEL,
+        "voice": SUNBIRD_TTS_VOICE,
+        "language": SUNBIRD_TTS_LANGUAGE,
+    }
+    if SUNBIRD_TTS_MODEL == "spark-tts":
+        payload["response_mode"] = "url"
+        payload["temperature"] = SUNBIRD_TTS_TEMPERATURE
+
+    resp = requests.post(
+        f"{SUNBIRD_API_URL}/tasks/audio/speech",
+        headers=_sunbird_headers(json=True),
+        json=payload,
+        timeout=120,
+    )
+    if not resp.ok:
+        raise SpeechError(f"Sunbird TTS failed ({resp.status_code}): {resp.text[:300]}")
+
+    body = resp.json()
+    audio_url = body.get("audio_url") or body.get("output", {}).get("audio_url")
+    if not audio_url:
+        raise SpeechError(f"Sunbird TTS missing audio_url: {resp.text[:300]}")
+    return _download_sunbird_audio(audio_url, output_path)
+
+
+def _sunbird_synthesize_legacy(text: str, output_path: Path) -> Path:
     resp = requests.post(
         f"{SUNBIRD_API_URL}/tasks/tts",
         headers=_sunbird_headers(json=True),
         json={
             "text": text,
             "speaker_id": SUNBIRD_TTS_SPEAKER_ID,
-            "temperature": 0.7,
+            "temperature": SUNBIRD_TTS_TEMPERATURE,
         },
         timeout=120,
     )
     if not resp.ok:
-        raise SpeechError(f"Sunbird TTS failed ({resp.status_code}): {resp.text[:300]}")
+        raise SpeechError(f"Sunbird legacy TTS failed ({resp.status_code}): {resp.text[:300]}")
 
     audio_url = resp.json().get("output", {}).get("audio_url")
     if not audio_url:
-        raise SpeechError(f"Sunbird TTS missing audio_url: {resp.text[:300]}")
+        raise SpeechError(f"Sunbird legacy TTS missing audio_url: {resp.text[:300]}")
+    return _download_sunbird_audio(audio_url, output_path)
 
-    audio_resp = requests.get(audio_url, timeout=60)
-    audio_resp.raise_for_status()
-    output_path.write_bytes(audio_resp.content)
-    logger.info("Sunbird TTS OK: %d bytes -> %s", len(audio_resp.content), output_path)
-    return output_path
+
+def _sunbird_synthesize(text: str, output_path: Path) -> Path:
+    prepared = prepare_luganda_for_tts(text)
+    try:
+        return _sunbird_synthesize_unified(prepared, output_path)
+    except (SpeechError, requests.RequestException) as exc:
+        logger.warning("Sunbird unified TTS failed, trying legacy endpoint: %s", exc)
+        return _sunbird_synthesize_legacy(prepared, output_path)
 
 
 def _gtts_synthesize(text: str, output_path: Path) -> Path:
@@ -196,7 +325,20 @@ def translate_to_luganda(text: str, *, source_language: str = "eng", target_lang
     return translated
 
 
+def first_instruction_luganda(instructions: list[dict]) -> str:
+    """Return the first step's Luganda instruction, prepared for TTS."""
+    for item in instructions:
+        lug = (item.get("instruction_luganda") or "").strip()
+        if lug:
+            return prepare_luganda_for_tts(lug)
+    return ""
+
+
 def concatenate_instructions_luganda(instructions: list[dict]) -> str:
     """Build one spoken script from route step Luganda instructions."""
-    parts = [i.get("instruction_luganda", "") for i in instructions if i.get("instruction_luganda")]
+    parts = [
+        prepare_luganda_for_tts(i.get("instruction_luganda", ""))
+        for i in instructions
+        if i.get("instruction_luganda")
+    ]
     return ". ".join(parts)

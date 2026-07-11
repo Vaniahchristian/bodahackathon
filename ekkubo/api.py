@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ekkubo.pipeline import navigate
-from ekkubo.speech import SpeechError, transcribe_audio
+from ekkubo.speech import SpeechError, synthesize_speech, transcribe_audio
 
 app = FastAPI(title="Ekkubo API")
 
@@ -31,6 +31,10 @@ class NavigateRequest(BaseModel):
     generate_audio: bool = True
 
 
+class SpeakRequest(BaseModel):
+    text: str
+
+
 @app.post("/api/navigate")
 def navigate_endpoint(req: NavigateRequest) -> dict:
     result = navigate(req.origin, req.destination, generate_audio=req.generate_audio)
@@ -44,6 +48,18 @@ def navigate_endpoint(req: NavigateRequest) -> dict:
         "instructions": result.instructions,
         "audio_url": f"/api/audio/{Path(result.audio_path).name}" if result.audio_path else None,
     }
+
+
+@app.post("/api/speak")
+def speak_endpoint(req: SpeakRequest) -> dict:
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(400, "Text is required")
+    try:
+        audio_path = synthesize_speech(text)
+    except (SpeechError, ValueError) as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"audio_url": f"/api/audio/{Path(audio_path).name}"}
 
 
 @app.post("/api/transcribe")
@@ -70,6 +86,8 @@ def get_audio(filename: str) -> FileResponse:
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChatCircleDots,
   NavigationArrow,
+  SpeakerHigh,
   WarningCircle,
 } from "@phosphor-icons/react";
 import { RecordButton } from "./record-button";
@@ -190,9 +191,15 @@ function ResultView({ result }: { result: NavigateResponse }) {
       {result.audio_url && (
         <div className="mt-4">
           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Spoken route (Luganda)
+            Next direction (Luganda)
           </p>
-          <audio controls src={`${API_URL}${result.audio_url}`} className="w-full" style={{ accentColor: "var(--color-accent)" }} />
+          <audio
+            controls
+            autoPlay
+            src={`${API_URL}${result.audio_url}`}
+            className="w-full"
+            style={{ accentColor: "var(--color-accent)" }}
+          />
         </div>
       )}
 
@@ -206,14 +213,63 @@ function ResultView({ result }: { result: NavigateResponse }) {
             <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
               {step.distance_m != null ? `${step.distance_m} m` : ""}
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="font-medium">{step.chosen_landmark || "No landmark — follow the road"}</p>
               <p className="mt-0.5 text-sm text-accent">{step.instruction_luganda}</p>
               <p className="mt-0.5 text-sm text-muted-foreground">{step.instruction_english}</p>
             </div>
+            {step.instruction_luganda && (
+              <SpeakButton text={step.instruction_luganda} />
+            )}
           </li>
         ))}
       </ol>
     </div>
+  );
+}
+
+function SpeakButton({ text }: { text: string }) {
+  const [busy, setBusy] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  async function handleSpeak() {
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/speak`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Speech failed");
+
+      audioRef.current?.pause();
+      const audio = new Audio(`${API_URL}${data.audio_url}`);
+      audioRef.current = audio;
+      await audio.play();
+    } catch {
+      // Keep the step list usable even if one TTS request fails.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleSpeak}
+      disabled={busy}
+      aria-label="Play Luganda direction"
+      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+    >
+      <SpeakerHigh size={16} weight="fill" />
+    </button>
   );
 }
