@@ -3,6 +3,20 @@
 import os
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_dotenv() -> None:
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(_PROJECT_ROOT / ".env")
+    except ImportError:
+        pass
+
+
+_load_dotenv()
+
 # --- App identity (required by Nominatim usage policy) ---
 APP_NAME = "Ekkubo"
 APP_VERSION = "1.0"
@@ -34,7 +48,7 @@ POI_SEARCH_RADIUS_M = 100
 # --- Gemma 4 via Google Generative Language API ---
 # Set GEMINI_API_KEY or GOOGLE_API_KEY in environment / Kaggle secrets.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
-GEMMA_MODEL = os.environ.get("EKKUBO_GEMMA_MODEL", "gemma-4-4b-it")
+GEMMA_MODEL = os.environ.get("EKKUBO_GEMMA_MODEL", "gemma-4-31b-it")
 GEMINI_API_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{GEMMA_MODEL}:generateContent"
 )

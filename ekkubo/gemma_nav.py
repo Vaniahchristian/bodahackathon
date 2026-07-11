@@ -43,7 +43,6 @@ def _call_gemma(user_prompt: str, *, temperature: float = 0.3) -> str:
         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
         "generationConfig": {
             "temperature": temperature,
-            "responseMimeType": "application/json",
         },
     }
     url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
@@ -62,10 +61,15 @@ def _call_gemma(user_prompt: str, *, temperature: float = 0.3) -> str:
 
 def _parse_json(text: str) -> Any:
     text = text.strip()
-    # Strip markdown fences if model ignores instruction
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+        raise
 
 
 def extract_search_term(raw_request: str) -> str:
