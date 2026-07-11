@@ -15,7 +15,26 @@ def _load_dotenv() -> None:
         pass
 
 
+def _load_kaggle_secrets() -> None:
+    """Load API keys from Kaggle notebook secrets when running on Kaggle."""
+    try:
+        from kaggle_secrets import UserSecretsClient
+
+        client = UserSecretsClient()
+        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+            key = client.get_secret("GEMINI_API_KEY")
+            if key:
+                os.environ["GEMINI_API_KEY"] = key
+        if not os.environ.get("OPENAI_API_KEY"):
+            key = client.get_secret("OPENAI_API_KEY")
+            if key:
+                os.environ["OPENAI_API_KEY"] = key
+    except Exception:
+        pass
+
+
 _load_dotenv()
+_load_kaggle_secrets()
 
 # --- App identity (required by Nominatim usage policy) ---
 APP_NAME = "Ekkubo"
@@ -49,12 +68,17 @@ POI_SEARCH_RADIUS_M = 100
 # Set GEMINI_API_KEY or GOOGLE_API_KEY in environment / Kaggle secrets.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
 GEMMA_MODEL = os.environ.get("EKKUBO_GEMMA_MODEL", "gemma-4-31b-it")
+GEMMA_FALLBACK_MODEL = os.environ.get("EKKUBO_GEMMA_FALLBACK_MODEL", "gemini-2.0-flash")
 GEMINI_API_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{GEMMA_MODEL}:generateContent"
 )
 
 # --- Speech ---
-WHISPER_MODEL = os.environ.get("EKKUBO_WHISPER_MODEL", "base")
+# Hosted Whisper transcription via OpenAI API (no local model download/torch).
+# Set OPENAI_API_KEY in environment / Kaggle secrets.
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+WHISPER_MODEL = os.environ.get("EKKUBO_WHISPER_MODEL", "whisper-1")
+WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
 TTS_LANG_PRIMARY = "lg"
 TTS_LANG_FALLBACK = "en"
 

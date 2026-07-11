@@ -1,4 +1,4 @@
-"""Speech I/O: Whisper STT and gTTS with Luganda fallback."""
+"""Speech I/O: hosted Whisper STT (OpenAI API) and gTTS with Luganda fallback."""
 
 from __future__ import annotations
 
@@ -6,28 +6,46 @@ import logging
 import tempfile
 from pathlib import Path
 
-from ekkubo.config import TTS_LANG_FALLBACK, TTS_LANG_PRIMARY, TTS_MIN_BYTES_PER_CHAR, WHISPER_MODEL
+import requests
+
+from ekkubo.config import (
+    OPENAI_API_KEY,
+    TTS_LANG_FALLBACK,
+    TTS_LANG_PRIMARY,
+    TTS_MIN_BYTES_PER_CHAR,
+    WHISPER_API_URL,
+    WHISPER_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
-_whisper_model = None
 
-
-def _get_whisper():
-    global _whisper_model
-    if _whisper_model is None:
-        import whisper
-
-        logger.info("Loading Whisper model: %s", WHISPER_MODEL)
-        _whisper_model = whisper.load_model(WHISPER_MODEL)
-    return _whisper_model
+class SpeechError(Exception):
+    """Raised when hosted Whisper transcription fails."""
 
 
 def transcribe_audio(audio_path: str | Path) -> str:
-    """Transcribe rider speech with Whisper."""
-    model = _get_whisper()
-    result = model.transcribe(str(audio_path), fp16=False)
-    text = (result.get("text") or "").strip()
+    """Transcribe rider speech via the hosted Whisper API (no local model/torch)."""
+    if not OPENAI_API_KEY:
+        raise SpeechError(
+            "OPENAI_API_KEY not set. Get one at https://platform.openai.com/api-keys"
+        )
+
+    path = Path(audio_path)
+    try:
+        with open(path, "rb") as f:
+            resp = requests.post(
+                WHISPER_API_URL,
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                files={"file": (path.name, f)},
+                data={"model": WHISPER_MODEL},
+                timeout=60,
+            )
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise SpeechError(f"Whisper API request failed: {exc}") from exc
+
+    text = (resp.json().get("text") or "").strip()
     logger.info("Whisper transcription: %r", text)
     return text
 

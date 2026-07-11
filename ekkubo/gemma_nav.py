@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from ekkubo.config import GEMINI_API_KEY, GEMINI_API_URL
+from ekkubo.config import GEMINI_API_KEY, GEMMA_FALLBACK_MODEL, GEMMA_MODEL
 from ekkubo.landmarks import POI
 from ekkubo.routing import RouteStep
 
@@ -31,6 +31,10 @@ Rules:
 - Always respond with valid JSON only, no markdown fences."""
 
 
+def _gemini_url(model: str) -> str:
+    return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
 def _call_gemma(user_prompt: str, *, temperature: float = 0.3) -> str:
     if not GEMINI_API_KEY:
         raise GemmaError(
@@ -45,22 +49,57 @@ def _call_gemma(user_prompt: str, *, temperature: float = 0.3) -> str:
             "temperature": temperature,
         },
     }
-    url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
+
+    models = [GEMMA_MODEL]
+    if GEMMA_FALLBACK_MODEL and GEMMA_FALLBACK_MODEL != GEMMA_MODEL:
+        models.append(GEMMA_FALLBACK_MODEL)
+
+    last_error: GemmaError | None = None
+    for model in models:
+        url = f"{_gemini_url(model)}?key={GEMINI_API_KEY}"
+        try:
+            return _call_gemma_once(url, payload)
+        except GemmaError as exc:
+            last_error = exc
+            logger.warning("Gemma model %s failed: %s", model, exc)
+
+    raise last_error or GemmaError("All Gemma models failed")
+
+
+def _call_gemma_once(url: str, payload: dict[str, Any]) -> str:
     try:
         resp = requests.post(url, json=payload, timeout=90)
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as exc:
+            snippet = (resp.text or "")[:200]
+            raise GemmaError(f"Gemma API returned non-JSON ({resp.status_code}): {snippet!r}") from exc
     except requests.RequestException as exc:
         raise GemmaError(f"Gemma API request failed: {exc}") from exc
 
-    try:
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError) as exc:
-        raise GemmaError(f"Unexpected Gemma response shape: {data}") from exc
+    candidates = data.get("candidates") or []
+    if not candidates:
+        feedback = data.get("promptFeedback", {})
+        raise GemmaError(f"No Gemma candidates returned: {feedback}")
+
+    candidate = candidates[0]
+    finish = candidate.get("finishReason")
+    if finish and finish not in ("STOP", "MAX_TOKENS", "FINISH_REASON_UNSPECIFIED", None):
+        raise GemmaError(f"Gemma blocked response (finishReason={finish})")
+
+    parts = candidate.get("content", {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+    if not text:
+        raise GemmaError(f"Empty Gemma text in response: {candidate}")
+
+    return text
 
 
 def _parse_json(text: str) -> Any:
     text = text.strip()
+    if not text:
+        raise GemmaError("Gemma returned empty text")
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
     try:
@@ -68,8 +107,11 @@ def _parse_json(text: str) -> Any:
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
-            return json.loads(match.group())
-        raise
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError as exc:
+                raise GemmaError(f"Invalid JSON from Gemma: {text[:200]!r}") from exc
+        raise GemmaError(f"Invalid JSON from Gemma: {text[:200]!r}")
 
 
 def extract_search_term(raw_request: str) -> str:
@@ -105,6 +147,26 @@ def _poi_to_dict(poi: POI) -> dict[str, Any]:
         "label": poi.label,
         "lat": poi.lat,
         "lon": poi.lon,
+    }
+
+
+def _fallback_step(step: RouteStep) -> dict[str, Any]:
+    text = step.instruction.strip()
+    if not text:
+        parts = []
+        if step.modifier:
+            parts.append(step.modifier.replace("_", " "))
+        if step.maneuver_type and step.maneuver_type != "unknown":
+            parts.append(step.maneuver_type.replace("_", " "))
+        if step.name:
+            parts.append(f"onto {step.name}")
+        text = " ".join(parts) or f"Continue for {int(step.distance_m)} meters"
+    return {
+        "distance_m": int(step.distance_m),
+        "maneuver": step.maneuver_type,
+        "chosen_landmark": None,
+        "instruction_luganda": text,
+        "instruction_english": text,
     }
 
 
@@ -166,12 +228,6 @@ def disambiguate_route(
             instr = disambiguate_step(step, pois, rider_phrasing_style=rider_request)
         except GemmaError as exc:
             logger.warning("Gemma failed for step, using fallback: %s", exc)
-            instr = {
-                "distance_m": int(step.distance_m),
-                "maneuver": step.maneuver_type,
-                "chosen_landmark": None,
-                "instruction_luganda": step.instruction,
-                "instruction_english": step.instruction,
-            }
+            instr = _fallback_step(step)
         instructions.append(instr)
     return instructions
