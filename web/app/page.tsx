@@ -11,6 +11,15 @@ import { RecordButton } from "./record-button";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function logNav(event: string, detail?: unknown) {
+  const ts = new Date().toISOString().slice(11, 23);
+  if (detail === undefined) {
+    console.log(`[Ekkubo ${ts}] ${event}`);
+  } else {
+    console.log(`[Ekkubo ${ts}] ${event}`, detail);
+  }
+}
+
 type Instruction = {
   distance_m?: number;
   chosen_landmark?: string | null;
@@ -35,24 +44,79 @@ export default function Home() {
   const [result, setResult] = useState<NavigateResponse | null>(null);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    logNav("app ready", { apiUrl: API_URL });
+  }, []);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
     setResult(null);
+
+    const payload = { origin, destination, generate_audio: false };
+    const url = `${API_URL}/api/navigate`;
+    const started = performance.now();
+    const heartbeat = window.setInterval(() => {
+      logNav("navigate still waiting", {
+        elapsedMs: Math.round(performance.now() - started),
+        url,
+      });
+    }, 5000);
+
+    logNav("navigate started", { url, payload });
+
     try {
-      const res = await fetch(`${API_URL}/api/navigate`, {
+      logNav("navigate fetch sending");
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ origin, destination, generate_audio: false }),
+        body: JSON.stringify(payload),
       });
-      const data: NavigateResponse = await res.json();
+      logNav("navigate fetch returned", {
+        elapsedMs: Math.round(performance.now() - started),
+        ok: res.ok,
+        status: res.status,
+        statusText: res.statusText,
+      });
+
+      const raw = await res.text();
+      logNav("navigate response body received", {
+        elapsedMs: Math.round(performance.now() - started),
+        bytes: raw.length,
+        preview: raw.slice(0, 200),
+      });
+
+      let data: NavigateResponse;
+      try {
+        data = JSON.parse(raw) as NavigateResponse;
+      } catch (parseErr) {
+        logNav("navigate json parse failed", parseErr);
+        throw new Error("Invalid JSON from navigation API");
+      }
+
+      logNav("navigate parsed", {
+        elapsedMs: Math.round(performance.now() - started),
+        status: data.status,
+        message: data.message,
+        stepCount: data.instructions?.length ?? 0,
+        hasJourneySpeech: Boolean(data.journey_speech_text),
+        hasAudioUrl: Boolean(data.audio_url),
+      });
+
       if (!res.ok) throw new Error(data.message || "Navigation failed");
       setResult(data);
+      logNav("navigate complete");
     } catch (err) {
+      logNav("navigate failed", {
+        elapsedMs: Math.round(performance.now() - started),
+        error: err,
+      });
       setError(err instanceof Error ? err.message : "Navigation failed");
     } finally {
+      window.clearInterval(heartbeat);
       setLoading(false);
+      logNav("navigate finished", { elapsedMs: Math.round(performance.now() - started) });
     }
   }
 
@@ -235,6 +299,8 @@ function JourneyAudio({ text }: { text: string }) {
     let cancelled = false;
 
     async function loadAudio() {
+      const started = performance.now();
+      logNav("journey audio started", { chars: text.length });
       setLoading(true);
       setAudioUrl(null);
       try {
@@ -244,9 +310,19 @@ function JourneyAudio({ text }: { text: string }) {
           body: JSON.stringify({ text }),
         });
         const data = await res.json();
+        logNav("journey audio response", {
+          elapsedMs: Math.round(performance.now() - started),
+          ok: res.ok,
+          status: res.status,
+          audioUrl: data.audio_url,
+        });
         if (!res.ok) throw new Error(data.detail || "Speech failed");
         if (!cancelled) setAudioUrl(`${API_URL}${data.audio_url}`);
-      } catch {
+      } catch (err) {
+        logNav("journey audio failed", {
+          elapsedMs: Math.round(performance.now() - started),
+          error: err,
+        });
         if (!cancelled) setAudioUrl(null);
       } finally {
         if (!cancelled) setLoading(false);

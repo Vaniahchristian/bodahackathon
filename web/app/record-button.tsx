@@ -3,6 +3,15 @@
 import { useRef, useState } from "react";
 import { Microphone, Stop } from "@phosphor-icons/react";
 
+function logMic(event: string, detail?: unknown) {
+  const ts = new Date().toISOString().slice(11, 23);
+  if (detail === undefined) {
+    console.log(`[Ekkubo mic ${ts}] ${event}`);
+  } else {
+    console.log(`[Ekkubo mic ${ts}] ${event}`, detail);
+  }
+}
+
 export function RecordButton({
   apiUrl,
   onTranscribed,
@@ -20,6 +29,8 @@ export function RecordButton({
   const chunksRef = useRef<Blob[]>([]);
 
   async function transcribeBlob(blob: Blob) {
+    const started = performance.now();
+    logMic("transcribe started", { bytes: blob.size, type: blob.type });
     setTranscribing(true);
     onBusyChange(true);
     try {
@@ -27,9 +38,19 @@ export function RecordButton({
       form.append("file", blob, "recording.webm");
       const res = await fetch(`${apiUrl}/api/transcribe`, { method: "POST", body: form });
       const data = await res.json();
+      logMic("transcribe response", {
+        elapsedMs: Math.round(performance.now() - started),
+        ok: res.ok,
+        status: res.status,
+        text: data.text,
+      });
       if (!res.ok) throw new Error(data.detail || "Transcription failed");
       onTranscribed(data.text);
     } catch (err) {
+      logMic("transcribe failed", {
+        elapsedMs: Math.round(performance.now() - started),
+        error: err,
+      });
       onError(err instanceof Error ? err.message : "Transcription failed");
     } finally {
       setTranscribing(false);
