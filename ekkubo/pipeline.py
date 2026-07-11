@@ -18,7 +18,7 @@ from ekkubo.gemma_nav import (
 )
 from ekkubo.landmarks import OverpassError, pois_for_route_steps
 from ekkubo.routing import Route, RoutingError, get_route
-from ekkubo.speech import first_instruction_luganda, synthesize_speech
+from ekkubo.speech import concatenate_instructions_luganda, synthesize_speech
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ def navigate(
         audio_path = None
         if generate_audio and instructions:
             _notify(on_status, PipelineStatus.GENERATING_SPEECH.value)
-            script = first_instruction_luganda(instructions)
+            script = concatenate_instructions_luganda(instructions)
             if script:
                 audio_path = str(synthesize_speech(script))
 

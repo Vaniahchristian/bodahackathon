@@ -191,7 +191,7 @@ function ResultView({ result }: { result: NavigateResponse }) {
       {result.audio_url && (
         <div className="mt-4">
           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Next direction (Luganda)
+            Full journey (Luganda)
           </p>
           <audio
             controls
