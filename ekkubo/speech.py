@@ -45,8 +45,25 @@ def _sunbird_headers(*, json: bool = False) -> dict[str, str]:
     return headers
 
 
+_STT_MIME_OVERRIDES: dict[str, str] = {
+    ".webm": "audio/webm",
+    ".mp4": "audio/mp4",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".aac": "audio/aac",
+}
+
+
 def _audio_mime(path: Path) -> str:
+    """MIME type for Sunbird STT — browsers label webm as video/webm, which Sunbird rejects."""
+    override = _STT_MIME_OVERRIDES.get(path.suffix.lower())
+    if override:
+        return override
     guessed, _ = mimetypes.guess_type(path.name)
+    if guessed == "video/webm":
+        return "audio/webm"
     return guessed or "application/octet-stream"
 
 
@@ -65,10 +82,13 @@ def normalize_audio_for_stt(audio_path: Path) -> Path:
             "-y",
             "-i",
             str(audio_path),
+            "-vn",
             "-ar",
             "16000",
             "-ac",
             "1",
+            "-f",
+            "wav",
             str(wav_path),
         ],
         capture_output=True,

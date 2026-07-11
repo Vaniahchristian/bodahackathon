@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ekkubo import speech
@@ -21,6 +23,10 @@ class _FakeResponse:
 
     def json(self):
         return self._json
+
+
+def test_audio_mime_maps_webm_to_audio_webm():
+    assert speech._audio_mime(Path("recording.webm")) == "audio/webm"
 
 
 def test_transcribe_audio_uses_sunbird(monkeypatch, tmp_path):
@@ -45,6 +51,30 @@ def test_transcribe_audio_uses_sunbird(monkeypatch, tmp_path):
     assert captured["url"].endswith("/tasks/stt")
     assert captured["headers"]["Authorization"] == "Bearer test-sunbird"
     assert captured["data"]["language"] == speech.SUNBIRD_STT_LANGUAGE
+
+
+def test_transcribe_audio_sends_audio_webm_for_browser_recording(monkeypatch, tmp_path):
+    audio = tmp_path / "recording.webm"
+    audio.write_bytes(b"fake webm")
+
+    captured = {}
+
+    def fake_normalize(path):
+        return path
+
+    def fake_post(url, headers, files, data, timeout):
+        captured["mime"] = files["audio"][2]
+        return _FakeResponse({"audio_transcription": "Kisaasi"})
+
+    monkeypatch.setattr(speech, "normalize_audio_for_stt", fake_normalize)
+    monkeypatch.setattr(speech, "SUNBIRD_API_KEY", "test-sunbird")
+    monkeypatch.setattr(speech, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(speech.requests, "post", fake_post)
+
+    text = speech.transcribe_audio(audio)
+
+    assert text == "Kisaasi"
+    assert captured["mime"] == "audio/webm"
 
 
 def test_transcribe_audio_requires_api_key(monkeypatch, tmp_path):
