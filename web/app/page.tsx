@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
+import {
+  ChatCircleDots,
+  NavigationArrow,
+  WarningCircle,
+} from "@phosphor-icons/react";
+import { RecordButton } from "./record-button";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -23,57 +29,9 @@ export default function Home() {
   const [origin, setOrigin] = useState("Makerere University, Kampala");
   const [destination, setDestination] = useState("");
   const [loading, setLoading] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const [recording, setRecording] = useState(false);
+  const [micBusy, setMicBusy] = useState(false);
   const [result, setResult] = useState<NavigateResponse | null>(null);
   const [error, setError] = useState("");
-
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-
-  async function transcribeBlob(blob: Blob) {
-    setError("");
-    setTranscribing(true);
-    try {
-      const form = new FormData();
-      form.append("file", blob, "recording.webm");
-      const res = await fetch(`${API_URL}/api/transcribe`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Transcription failed");
-      setDestination(data.text);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Transcription failed");
-    } finally {
-      setTranscribing(false);
-    }
-  }
-
-  async function startRecording() {
-    setError("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
-        transcribeBlob(blob);
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      setRecording(true);
-    } catch {
-      setError("Microphone access denied or unavailable.");
-    }
-  }
-
-  function stopRecording() {
-    recorderRef.current?.stop();
-    setRecording(false);
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -97,65 +55,165 @@ export default function Home() {
   }
 
   return (
-    <main style={{ maxWidth: 640, margin: "0 auto", padding: 24, fontFamily: "sans-serif" }}>
-      <h1>Ekkubo</h1>
-      <p>Eyes-free boda navigation for Kampala.</p>
-
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <label>
-          Starting point
-          <input value={origin} onChange={(e) => setOrigin(e.target.value)} required />
-        </label>
-
-        <label>
-          Destination
-          <input
-            value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            placeholder="e.g. Kisaasi, Kampala"
-            required
-          />
-        </label>
-
+    <main className="mx-auto min-h-dvh max-w-6xl px-5 py-10 md:px-10 md:py-14">
+      <header className="mb-10 flex items-center gap-3 md:mb-14">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+          <NavigationArrow size={18} weight="fill" />
+        </span>
         <div>
-          <button
-            type="button"
-            onClick={recording ? stopRecording : startRecording}
-            disabled={transcribing}
-          >
-            {recording ? "⏹ Stop recording" : "🎙 Speak destination"}
-          </button>
-          {transcribing && <span style={{ marginLeft: 8 }}>Transcribing…</span>}
+          <h1 className="text-lg font-semibold tracking-tight">Ekkubo</h1>
+          <p className="text-sm text-muted-foreground">Eyes-free boda navigation for Kampala</p>
         </div>
+      </header>
 
-        <button type="submit" disabled={loading}>
-          {loading ? "Finding route…" : "Get directions"}
-        </button>
-      </form>
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,22rem)_1fr] lg:gap-16">
+        <section aria-label="Plan your route">
+          <p className="mb-5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Plan your route
+          </p>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Starting point</span>
+              <input
+                value={origin}
+                onChange={(e) => setOrigin(e.target.value)}
+                required
+                className="rounded-xl border border-border bg-background px-3.5 py-3 text-sm outline-none transition-colors focus:border-accent"
+              />
+            </label>
 
-      {result?.status === "clarify" && (
-        <p>
-          <strong>Need clarification:</strong> {result.clarifying_question}
-        </p>
-      )}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Destination</span>
+              <div className="flex gap-2">
+                <input
+                  value={destination}
+                  onChange={(e) => setDestination(e.target.value)}
+                  placeholder="e.g. Kisaasi, Kampala"
+                  required
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3.5 py-3 text-sm outline-none transition-colors focus:border-accent"
+                />
+                <RecordButton
+                  apiUrl={API_URL}
+                  onTranscribed={setDestination}
+                  onError={setError}
+                  onBusyChange={setMicBusy}
+                />
+              </div>
+              {micBusy && <span className="text-xs text-muted-foreground">Transcribing…</span>}
+            </label>
 
-      {result?.status === "done" && (
-        <section>
-          <p>{result.message}</p>
-          <ol>
-            {result.instructions.map((step, i) => (
-              <li key={i}>
-                <strong>{step.chosen_landmark || "(no landmark)"}</strong> — {step.instruction_english}
-                <br />
-                <em>{step.instruction_luganda}</em>
-              </li>
-            ))}
-          </ol>
-          {result.audio_url && <audio controls src={`${API_URL}${result.audio_url}`} />}
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-1 rounded-xl bg-accent px-4 py-3.5 text-sm font-medium tracking-tight text-accent-foreground transition-[transform,opacity] duration-150 ease-out active:scale-[0.98] disabled:opacity-50"
+            >
+              {loading ? "Finding route…" : "Get directions"}
+            </button>
+          </form>
         </section>
-      )}
+
+        <section aria-label="Route results" className="min-w-0">
+          {!result && !loading && !error && <EmptyState />}
+          {loading && <LoadingState />}
+
+          {error && (
+            <StatusBlock icon={<WarningCircle size={20} weight="bold" />} tone="error" title="Something went wrong">
+              {error}
+            </StatusBlock>
+          )}
+
+          {result?.status === "clarify" && (
+            <StatusBlock icon={<ChatCircleDots size={20} weight="bold" />} tone="accent" title="Need a bit more detail">
+              {result.clarifying_question}
+            </StatusBlock>
+          )}
+
+          {result?.status === "done" && <ResultView result={result} />}
+        </section>
+      </div>
     </main>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex flex-col gap-2 border-t border-border pt-6 text-sm text-muted-foreground">
+      <NavigationArrow size={22} weight="light" className="text-muted-foreground/70" />
+      <p>Your route will appear here, with spoken Luganda directions once you search.</p>
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="flex flex-col gap-3 border-t border-border pt-6">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="h-14 animate-pulse rounded-lg bg-[linear-gradient(90deg,var(--color-muted)_25%,var(--color-accent-soft)_50%,var(--color-muted)_75%)] bg-[length:200%_100%]"
+          style={{ animation: "shimmer 1.6s ease-in-out infinite", animationDelay: `${i * 120}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function StatusBlock({
+  icon,
+  tone,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  tone: "error" | "accent";
+  title: string;
+  children: React.ReactNode;
+}) {
+  const toneClass = tone === "error" ? "border-error bg-error-soft text-error" : "border-accent bg-accent-soft text-accent";
+  return (
+    <div className={`flex gap-3 rounded-xl border-t-2 p-4 ${toneClass}`} style={{ animation: "rise-in 0.35s cubic-bezier(0.16,1,0.3,1)" }}>
+      <div className="mt-0.5 shrink-0">{icon}</div>
+      <div className="text-sm text-foreground">
+        <p className="font-medium">{title}</p>
+        <p className="mt-0.5 text-muted-foreground">{children}</p>
+      </div>
+    </div>
+  );
+}
+
+function ResultView({ result }: { result: NavigateResponse }) {
+  return (
+    <div className="border-t border-border pt-6" style={{ animation: "rise-in 0.4s cubic-bezier(0.16,1,0.3,1)" }}>
+      <p className="text-sm text-muted-foreground">{result.message}</p>
+
+      {result.audio_url && (
+        <div className="mt-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Spoken route (Luganda)
+          </p>
+          <audio controls src={`${API_URL}${result.audio_url}`} className="w-full" style={{ accentColor: "var(--color-accent)" }} />
+        </div>
+      )}
+
+      <ol className="mt-6 divide-y divide-border">
+        {result.instructions.map((step, i) => (
+          <li
+            key={i}
+            className="flex gap-4 py-4"
+            style={{ animation: "rise-in 0.4s cubic-bezier(0.16,1,0.3,1) both", animationDelay: `${i * 60}ms` }}
+          >
+            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
+              {step.distance_m != null ? `${step.distance_m} m` : ""}
+            </span>
+            <div className="min-w-0">
+              <p className="font-medium">{step.chosen_landmark || "No landmark — follow the road"}</p>
+              <p className="mt-0.5 text-sm text-accent">{step.instruction_luganda}</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">{step.instruction_english}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
